@@ -1,0 +1,94 @@
+{
+  "app": "gentle-telegram-app",
+  "description": "Telegram as a remote for Gentle Shell: the option question a session is blocked on goes to your phone with one button per option, and a message you send from Telegram reaches the newest session as a prompt. A tap answers through the session's own desktop inbox (answer_question, via: session), which is what actually unblocks Pi.",
+  "readme": "https://github.com/Pacoaldev/gentle-telegram",
+  "settings": [
+    {
+      "id": "token",
+      "type": "text",
+      "key": "gentle-telegram.token",
+      "label": "Bot token",
+      "placeholder": "123456789:AA...",
+      "hint": "The token @BotFather gave you. Herdr saves settings in settings.json in clear text: treat that file as a secret. Empty: the bridge polls nothing."
+    },
+    {
+      "id": "allowlist",
+      "type": "text",
+      "key": "gentle-telegram.allowlist",
+      "label": "Allowed chats",
+      "placeholder": "123456789, -1001234567890",
+      "hint": "Chat ids that may talk to the bot, separated by commas. Empty: the first chat that writes becomes the operator's, and only it is answered."
+    },
+    {
+      "id": "poll",
+      "type": "bool",
+      "key": "gentle-telegram.poll",
+      "default": true,
+      "label": "Poll Telegram",
+      "hint": "Off: nothing is sent to Telegram, no order is relayed, and the mod costs nothing."
+    },
+    {
+      "id": "orders",
+      "type": "bool",
+      "key": "gentle-telegram.orders",
+      "default": true,
+      "label": "Relay orders",
+      "hint": "A message you send from Telegram runs as a prompt in the newest session, or is typed into the focused terminal when that session takes no desktop actions."
+    },
+    {
+      "id": "details",
+      "type": "bool",
+      "key": "gentle-telegram.details",
+      "default": true,
+      "label": "Show the log",
+      "hint": "The bridge's own log under the open question: what was seen, sent, answered and refused."
+    },
+    {
+      "id": "start",
+      "type": "action",
+      "command": "gentle-telegram.start",
+      "button": "Start polling",
+      "label": "Polling",
+      "hint": "Polling on. The same switch is in the mod's own window."
+    },
+    {
+      "id": "stop",
+      "type": "action",
+      "command": "gentle-telegram.stop",
+      "button": "Stop polling",
+      "label": "Polling off",
+      "hint": "Polling off, without deleting the token."
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "command": "gentle-telegram.check",
+      "button": "Check the token",
+      "label": "Telegram",
+      "hint": "Calls getMe and says which bot the token belongs to, or what Telegram refused."
+    },
+    {
+      "id": "send",
+      "type": "action",
+      "command": "gentle-telegram.send",
+      "button": "Send the composed order",
+      "label": "Order",
+      "hint": "Sends what the mod's own composer holds to the newest session."
+    },
+    {
+      "id": "forget",
+      "type": "action",
+      "command": "gentle-telegram.forget-chat",
+      "button": "Forget the learned chat",
+      "label": "Chat",
+      "hint": "Drops the chat the bridge learned, so the next one that writes becomes the operator's (and only that one)."
+    },
+    {
+      "id": "key",
+      "type": "key",
+      "action": "mod.open:gentle-telegram",
+      "label": "Shortcut",
+      "hint": "Opens the bridge window. Saved in keys.json."
+    }
+  ]
+}
