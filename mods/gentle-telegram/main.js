@@ -109,6 +109,11 @@ export default class GentleTelegram extends View {
       try {
         const updates = await rt.getUpdates(this.settings.token, this.state.offset);
         this.status = "polling";
+        // A failed cycle must not outlive its cause: clear the stale banner once the poll answers.
+        if (this.error) {
+          this.error = null;
+          this.errorAt = 0;
+        }
         if (updates.length) cx.timer.after(1, (cx) => this.consume(updates, cx));
         else cx.timer.after(1, (cx) => cx.notify());
       } catch (error) {
