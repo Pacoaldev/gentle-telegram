@@ -3,8 +3,8 @@
 
 Why a mock: a real `herdr-app shot` of the open mod carries the session name,
 its cwd and whatever the machine's feed holds, and the hub screenshot must not
-carry any of that. Values here come from mods/gentle-telegram/tokens.js (hex
-fallbacks) and ui.js (sizes, paddings, radii); no bot, session or path is real.
+carry any of that. Values here match Herdr's Graphite theme and the sizes,
+paddings, and radii in mods/gentle-telegram/ui.js; no bot, session or path is real.
 
 Run: python tools/preview-mock.py
 """
@@ -14,24 +14,37 @@ from PIL import Image, ImageDraw, ImageFont
 S = 2                      # render at 2x, so the PNG is 960 wide
 W = 480                    # the panel's width in CSS px
 P = {
-    "background": "#0b0a0c", "surface": "#171318", "raised": "#201a21",
-    "line": "#2a2229", "lineStrong": "#563040", "text": "#f4eff2",
-    "muted": "#a78e9b", "faint": "#76616b", "accent": "#f095c8",
-    "ok": "#79c98f", "warn": "#e0c27a", "err": "#ff718f", "info": "#a9c7ee",
+    "background": "#16181d",
+    "surface": "#1c1f26",
+    "raised": "#232730",
+    "line": "#2c313c",
+    "lineStrong": "#3b4252",
+    "text": "#e6e9ef",
+    "muted": "#9aa3b2",
+    "faint": "#6c7484",
+    "accent": "#6ea8fe",
+    "ok": "#79c98f",
+    "warn": "#df8e75",
+    "err": "#f07178",
+    "info": "#7eb6f7",
 }
 R = {"card": 10, "chip": 6, "row": 8}
-# The app draws with its own UI font; any sans-serif with the same metrics is close
-# enough, so the script runs on the machine that has one instead of one OS's folder.
-FONT_DIRS = ["C:/Windows/Fonts", "/System/Library/Fonts", "/Library/Fonts",
-             "/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/truetype/liberation",
-             os.path.expanduser("~/.local/share/fonts")]
-FONT_FILES = {"reg": ["segoeui.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf",
-                      "Helvetica.ttc", "Arial.ttf"],
-              "semi": ["segoeuib.ttf", "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
-                       "Helvetica.ttc", "Arial Bold.ttf"]}
+
+FONT_DIRS = [
+    "C:/Windows/Fonts",
+    "/System/Library/Fonts",
+    "/Library/Fonts",
+    "/usr/share/fonts/truetype/dejavu",
+    "/usr/share/fonts/truetype/liberation",
+    os.path.expanduser("~/.local/share/fonts"),
+]
+FONT_FILES = {
+    "reg": ["segoeui.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Helvetica.ttc", "Arial.ttf"],
+    "semi": ["segoeuib.ttf", "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"],
+}
 
 
-def font_path(kind, size):
+def font_path(kind):
     for directory in FONT_DIRS:
         for name in FONT_FILES[kind]:
             candidate = os.path.join(directory, name)
@@ -41,7 +54,7 @@ def font_path(kind, size):
 
 
 def load(kind, size):
-    path = font_path(kind, size)
+    path = font_path(kind)
     if path:
         try:
             return ImageFont.truetype(path, size * S)
@@ -57,56 +70,66 @@ F_BODY = load("reg", 13)
 F_META = load("reg", 11)
 F_LOG = load("reg", 12)
 
-HEADER = {"polling": ("polling", "ok"), "idle": ("idle", "muted"),
-          "error": ("error", "err"), "checking": ("checking", "info")}
+HEADER = {
+    "polling": ("polling", "ok"),
+    "idle": ("idle", "muted"),
+    "error": ("error", "err"),
+    "checking": ("checking", "info"),
+}
 QUESTION = {
     "chip": ("open question", "warn"),
-    "meta": "herdr-docs \u00b7 ~/code/herdr-docs",
-    "text": "\u00bfReescribo el RECIPE antes del release?",
-    "options": ["1. SI", "2. NO"],
+    "meta": "demo-app · ~/projects/demo-app",
+    "text": "Run the full test suite before creating the release tag?",
+    "options": ["1. Yes, run tests", "2. Skip for now", "3. Cancel"],
 }
 LOG = [
-    ("blocker", "demo-app \u00b7 Corro los tests con --shuffle antes del commit? \u00b7 2 options"),
-    ("answered", "1. SI \u2014 the session answered through its own inbox"),
-    ("order", "Telegram \u2192 demo-app: corre tambi\u00e9n el lint"),
-    ("notice", "check: bot @demo_bridge_bot (id 123456789)"),
-    ("blocker", "Sent the open question of herdr-docs \u00b7 2 options"),
-    ("answered", "2. NO \u2014 the question was closed in the session"),
-    ("error", "Telegram refused getUpdates: 429 Too Many Requests (retry after 3)"),
+    ("blocker", "demo-app · Run the full test suite before creating the release tag?"),
+    ("answered", "1. Yes, run tests — answered through session inbox"),
+    ("order", "Telegram -> demo-app: check git status after tests"),
+    ("notice", "Token is good: @demo_bridge_bot"),
+    ("blocker", "herdr-docs · Update RECIPE.md with new shortcut?"),
+    ("answered", "1. Yes — answered through session inbox"),
+    ("order", "Telegram -> herdr-docs: run herdr-app check"),
 ]
-KIND = {"blocker": "warn", "answered": "ok", "order": "info",
-        "error": "err", "notice": "muted"}
+KIND = {"blocker": "warn", "answered": "ok", "order": "info", "error": "err", "notice": "muted"}
 
 
 def tw(d, text, font):
     return d.textlength(text, font=font)
 
 
-def th(font):
-    box = font.getbbox("Ag")
-    return box[3] - box[1]
+def metrics(font):
+    ascent, descent = font.getmetrics()
+    return ascent + descent
+
+
+def draw_centered_text(d, box, text, font, fill):
+    """Center text vertically inside [x0, y0, x1, y1] using visual ink bounds."""
+    x0, y0, x1, y1 = box
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    d.text((cx, cy), text, font=font, fill=fill, anchor="mm")
 
 
 class Pen:
     def __init__(self, img, d):
-        self.img, self.d, self.y = img, d, 0
+        self.img, self.d = img, d
 
-    def chip(self, x, y, text, color):
-        h = th(F_CHIP) + 4 * S
-        w = tw(self.d, text, F_CHIP) + 12 * S
-        self.d.rounded_rectangle([x, y, x + w, y + h], R["chip"] * S, fill=P["raised"])
-        self.d.text((x + 6 * S, y + 2 * S), text, font=F_CHIP, fill=P[color])
+    def chip(self, x, y, text, color, bg=None):
+        h = 20 * S
+        w = tw(self.d, text, F_CHIP) + 14 * S
+        self.d.rounded_rectangle([x, y, x + w, y + h], R["chip"] * S, fill=bg or P["raised"], outline=P["line"], width=1 * S)
+        draw_centered_text(self.d, [x, y, x + w, y + h], text, F_CHIP, P[color])
         return w, h
 
     def button(self, x, y, label, primary=False, disabled=False):
-        h = th(F_BTN) + 8 * S
+        h = 26 * S
         w = tw(self.d, label, F_BTN) + 20 * S
         edge = P["accent"] if primary else P["lineStrong"]
-        self.d.rounded_rectangle([x, y, x + w, y + h], R["chip"] * S,
-                                 fill=P["accent"] if primary else P["raised"],
-                                 outline=edge, width=1 * S)
-        self.d.text((x + 10 * S, y + 4 * S), label, font=F_BTN,
-                    fill=P["background"] if primary else P["text"])
+        fill = P["accent"] if primary else P["raised"]
+        fg = P["background"] if primary else P["text"]
+        self.d.rounded_rectangle([x, y, x + w, y + h], R["chip"] * S, fill=fill, outline=edge, width=1 * S)
+        draw_centered_text(self.d, [x, y, x + w, y + h], label, F_BTN, fg)
         if disabled:
             box = self.img.crop((int(x), int(y), int(x + w), int(y + h)))
             self.img.paste(Image.blend(box, Image.new("RGB", box.size, P["raised"]), 0.55), (int(x), int(y)))
@@ -117,70 +140,76 @@ def build(img, d):
     pen = Pen(img, d)
     x0, y = 14 * S, 12 * S
 
-    # header, row 1: title left, chips right (title has flex_1 in the view)
-    chips = [HEADER["polling"][0], "24 seen", "9 answered", "5 orders"]
+    # Header row 1: title left, chips + close button right
+    close_sz = 22 * S
+    chips = [HEADER["polling"][0], "12 seen", "8 answered", "4 orders"]
     colors = [HEADER["polling"][1], "muted", "ok", "info"]
-    widths = [tw(d, c, F_CHIP) + 12 * S for c in chips]
-    cx = W * S - 14 * S - sum(widths) - 6 * S * (len(chips) - 1)
-    d.text((x0, y + 1 * S), "Telegram Bridge", font=F_TITLE, fill=P["text"])
+    widths = [tw(d, c, F_CHIP) + 14 * S for c in chips]
+    total_right = sum(widths) + 6 * S * len(chips) + close_sz
+    cx = W * S - 14 * S - total_right
+    d.text((x0, y + 10 * S), "Telegram Bridge", font=F_TITLE, fill=P["text"], anchor="lm")
     for c, col, w in zip(chips, colors, widths):
         pen.chip(cx, y, c, col)
         cx += w + 6 * S
-    y += max(th(F_TITLE) + 2 * S, th(F_CHIP) + 4 * S) + 6 * S
+    draw_centered_text(d, [cx, y, cx + close_sz, y + 20 * S], "×", F_TITLE, P["muted"])
+    y += 28 * S
 
-    # header, row 2: the three buttons
-    for label, primary, disabled in [("Stop polling", False, False),
-                                     ("Check token", False, False),
-                                     ("Forget the learned chat", False, False)]:
-        w, _ = pen.button(x0, y, label, primary, disabled)
-        x0 += w + 6 * S
-    y += th(F_BTN) + 8 * S + 8 * S
-
-    # body: the open question, then the log
-    x0 = 14 * S
-    bw = W * S - 28 * S
-    pad = 10 * S
-    qh = 8 * S + (th(F_CHIP) + 4 * S) + 6 * S + th(F_BODY) + 6 * S + (th(F_BTN) + 8 * S) + 8 * S
-    d.rounded_rectangle([x0, y, x0 + bw, y + qh], R["card"] * S, fill=P["raised"],
-                        outline=P["warn"], width=1 * S)
-    qy = y + 8 * S
-    w, h = pen.chip(x0 + pad, qy, *QUESTION["chip"])
-    d.text((x0 + pad + w + 6 * S, qy + 2 * S), QUESTION["meta"], font=F_META, fill=P["muted"])
-    qy += h + 6 * S
-    d.text((x0 + pad, qy), QUESTION["text"], font=F_BODY, fill=P["text"])
-    qy += th(F_BODY) + 6 * S
-    bx = x0 + pad
-    for label in QUESTION["options"]:
-        w, _ = pen.button(bx, qy, label)
+    # Header row 2: action buttons
+    bx = x0
+    for label in ["Stop polling", "Check token", "Forget the learned chat"]:
+        w, _ = pen.button(bx, y, label)
         bx += w + 6 * S
-    y += qh + 10 * S
+    y += 26 * S + 10 * S
 
-    # log: time (60px), kind chip, one truncated line
+    # Open question card
+    bw = W * S - 28 * S
+    pad = 12 * S
+    line_h = metrics(F_BODY)
+    qh = 10 * S + 20 * S + 8 * S + line_h + 10 * S + 26 * S + 10 * S
+    d.rounded_rectangle([x0, y, x0 + bw, y + qh], R["card"] * S, fill=P["surface"], outline=P["warn"], width=1 * S)
+    qy = y + 10 * S
+    w, h = pen.chip(x0 + pad, qy, *QUESTION["chip"], bg=P["raised"])
+    d.text((x0 + pad + w + 8 * S, qy + h / 2), QUESTION["meta"], font=F_META, fill=P["muted"], anchor="lm")
+    qy += h + 8 * S
+    d.text((x0 + pad, qy + line_h / 2), QUESTION["text"], font=F_BODY, fill=P["text"], anchor="lm")
+    qy += line_h + 10 * S
+    ox = x0 + pad
+    for label in QUESTION["options"]:
+        w, _ = pen.button(ox, qy, label)
+        ox += w + 6 * S
+    y += qh + 12 * S
+
+    # Log rows
     for index, (kind, text) in enumerate(LOG):
-        d.text((x0, y + 2 * S), "10:%02d:%02d" % (12 + index, (index * 17) % 60),
-               font=F_META, fill=P["faint"])
-        w, h = pen.chip(x0 + 60 * S + 8 * S, y, kind, KIND[kind])
-        tx = x0 + 60 * S + 8 * S + w + 8 * S
+        row_h = 20 * S
+        cy = y + row_h / 2
+        d.text((x0, cy), "14:%02d:%02d" % (10 + index * 2, (index * 17) % 60), font=F_META, fill=P["faint"], anchor="lm")
+        w, _ = pen.chip(x0 + 56 * S + 8 * S, y, kind, KIND[kind])
+        tx = x0 + 56 * S + 8 * S + w + 8 * S
         room = x0 + bw - tx
         line = text
         while tw(d, line, F_LOG) > room and len(line) > 8:
             line = line[:-2]
         if line != text:
-            line = line[:-1] + "\u2026"
-        d.text((tx, y + 1 * S), line, font=F_LOG, fill=P["muted"])
-        y += max(h, th(F_LOG) + 3 * S) + 2 * S
+            line = line[:-1] + "…"
+        d.text((tx, cy), line, font=F_LOG, fill=P["muted"], anchor="lm")
+        y += row_h + 4 * S
 
-    # composer: top border, input box, Send
-    y += 10 * S
+    # Composer
+    y += 8 * S
     d.line([0, y, W * S, y], fill=P["line"], width=1 * S)
     y += 10 * S
-    box_h = th(F_BODY) + 12 * S
+    box_h = 30 * S
     send_w = tw(d, "Send", F_BTN) + 20 * S
-    d.rounded_rectangle([x0, y, x0 + bw - send_w - 8 * S, y + box_h], R["row"] * S,
-                        fill=P["raised"], outline=P["lineStrong"], width=1 * S)
-    d.text((x0 + 8 * S, y + 6 * S), "Order for the shown Gentle Shell\u2026",
-           font=F_BODY, fill=P["faint"])
-    pen.button(x0 + bw - send_w, y, "Send", primary=True)
+    d.rounded_rectangle(
+        [x0, y, x0 + bw - send_w - 8 * S, y + box_h],
+        R["row"] * S,
+        fill=P["raised"],
+        outline=P["lineStrong"],
+        width=1 * S,
+    )
+    d.text((x0 + 10 * S, y + box_h / 2), "Order for the shown Gentle Shell…", font=F_BODY, fill=P["faint"], anchor="lm")
+    pen.button(x0 + bw - send_w, y + 2 * S, "Send", primary=True)
     y += box_h + 10 * S
     return int(y)
 

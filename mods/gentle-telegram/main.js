@@ -14,7 +14,7 @@
 // inside `cx.timer.after`.
 import { View, div } from "gpui-kit";
 import { TextareaState } from "gpui-base";
-import { nextCommand, shared, setShared } from "herdr";
+import { checking, closeOverlay, nextCommand, props, shared, setShared } from "herdr";
 import * as rt from "./runtime.js";
 import { decodeUpdate, blockerText, inlineKeyboard, firstAllowedChat } from "./lib/telegram.js";
 import { feedSignature } from "./lib/feed.js";
@@ -71,9 +71,15 @@ export default class GentleTelegram extends View {
     this.pollerId = `view-${Math.random().toString(36).slice(2, 10)}`;
     this.input = TextareaState.new({ placeholder: "Order for the shown Gentle Shell…", rows: 1 });
     this.sync();
+    if (checking()) return;
     cx.spawn((cx) => this.pollLoop(cx));
     cx.spawn((cx) => this.commandLoop(cx));
     cx.spawn((cx) => this.watchLoop(cx));
+  }
+
+  close() {
+    const overlay = props()?.overlay;
+    if (overlay) closeOverlay(overlay);
   }
 
   /** Herdr's own reads: only ever called from inside a host call. */
@@ -476,7 +482,11 @@ export default class GentleTelegram extends View {
   }
 
   render(cx) {
-    if (kitOff()) return div();
+    if (kitOff()) {
+      const overlay = props()?.overlay;
+      if (overlay) closeOverlay(overlay);
+      return div();
+    }
     return screen(palette(), this, cx);
   }
 }

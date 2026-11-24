@@ -1,6 +1,12 @@
 {
   "place": "none",
   "title": "Telegram Bridge",
+  "overlay": {
+    "kind": "window",
+    "key": "gentle-telegram",
+    "width": 480,
+    "height": 540
+  },
   "capabilities": {
     "network": {
       "hosts": ["api.telegram.org"],

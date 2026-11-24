@@ -1,13 +1,18 @@
 <p align="center">
-  <img width="100%" src="preview.png" alt="Telegram Bridge" />
+  <img width="100%" src="animation.gif" alt="Herdr + Gentle-Shell Telegram Bridge" />
 </p>
-
-*Sanitized mock of the mod's card (`tools/preview-mock.py`): no real session, path or token.*
 
 # Telegram Bridge
 A Herdr app mod (`gentle-telegram`) that puts Telegram in the loop of a [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell) session: the option question a session is blocked on goes to your phone with one button per option, and a message you send from Telegram runs as a prompt in the newest session.
 
 The point is which path answers. A tap writes a `gentle-shell.desktop-action/v1` file (`kind: "answer_question"`, `args: { toolCallId, option, via: "session" }`) into `<agentDir>/desktop/inbox/<sessionId>/`, which is the path that actually unblocks Pi: no terminal keys, no pane scraping.
+
+## Preview
+<p align="center">
+  <img width="100%" src="preview.png" alt="Telegram Bridge UI" />
+</p>
+
+*Sanitized mock of the mod's card (`tools/preview-mock.py`): no real session, path or token.*
 
 ## Requirements
 - The [Herdr app](https://herdr.dev) (`herdr-app`), with mods and `kit.json` settings.
@@ -17,23 +22,30 @@ The point is which path answers. A tap writes a `gentle-shell.desktop-action/v1`
 ## What it touches
 | Surface | What |
 | --- | --- |
-| Network | `https://api.telegram.org` only, with your bot token. No other host. |
+| Network | `https://api.telegram.org` only, with your bot token (`fetch`, with a `curl` / PowerShell fallback on Windows when Herdr's in-process transport cannot open the socket). No other host. |
 | Reads | `<agentDir>/desktop/sessions/*.json` (the feed) and `<agentDir>/desktop/outbox/<sessionId>/*.json` (the session's own answer coming back). |
 | Writes | `<agentDir>/desktop/inbox/<sessionId>/<id>.json`, the `gentle-shell.desktop-action/v1` answer file. |
-| Runs | `hc send <address> <text>` only when the newest session has no inbox. Nothing else is executed. |
+| Runs | `hc send <address> <text>` when the target session has no inbox, and `curl` on Windows for Telegram API calls. Nothing else is executed. |
 | Secret | The bot token lives in `shared("gentle-telegram.token")`, the **Bot token** setting, and is never logged. |
 
 ## Install
 Copy and paste this prompt to your LLM agent:
-`Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/Pacoaldev/gentle-telegram/tree/main/mods/gentle-telegram`
+`Read ~/.config/herdr-app/AGENTS.md, then add this mod: herdr.dev/mods/Pacoaldev/gentle-telegram`
 
-Nothing outside the mod folder is required: it talks to Telegram over `fetch` and reads the desktop feed of the Gentle Shell sessions on this machine.
+(Or from GitHub directly: `Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/Pacoaldev/gentle-telegram/tree/main/mods/gentle-telegram`, or click **Install** on **Telegram Bridge** in Herdr's **Mod Manager** → **Browse**.)
 
-First run:
-1. @BotFather → `/newbot` → paste the token into **Bot token** (`gentle-telegram.token`).
-2. `gentle-telegram.check` answers which bot the token belongs to.
-3. Open the bridge (its `Shortcut` setting, or `herdr-app do mod.open --name gentle-telegram`) and write to the bot from Telegram: the first chat that writes becomes the operator's unless **Allowed chats** names ids.
-4. Block a session on an option question: it arrives with one button per option.
+Nothing outside the mod folder is required: it talks to Telegram directly and reads the desktop feed of the Gentle Shell sessions on this machine.
+
+### Ways to open it
+- **Floating window (default):** bind a key in **Shortcut** (`mod.open:gentle-telegram`), or run `herdr-app do mod.open --name gentle-telegram`.
+- **Split pane or tab:** `herdr-app do pane.split --direction right --mod gentle-telegram` or `herdr-app do tab.new --name Telegram --mod gentle-telegram`.
+- **Dock button (`main-dock` / `kanban`):** add `{ "id": "gentle-telegram", "label": "Telegram", "icon": "icons/send.svg", "mod": "gentle-telegram" }` to `~/.config/herdr-app/dock/panels.json`.
+
+### First run
+1. @BotFather → `/newbot` → paste the token into **Bot token** (`gentle-telegram.token` in PowerMods → Settings → Telegram Bridge, or `setShared("gentle-telegram.token", "...")`).
+2. Click **Check token** (or run `herdr-app do gentle-telegram.check` while the bridge is open) to confirm which bot the token belongs to.
+3. Open the bridge and write any message to the bot from Telegram: the first chat that writes becomes the operator's unless **Allowed chats** names ids.
+4. Block a session on an option question: it arrives on your phone with one button per option.
 
 ## What it does
 | Direction | How |
@@ -72,4 +84,13 @@ herdr-app check mods/gentle-telegram        # the mod loads once, and what is wr
 ```
 `mods/gentle-telegram/lib/` holds the rules (the Telegram wire format, the feed extraction, the action files, the dedup state) with no host imports, so they are unit-tested without a bot, a machine or a window. `runtime.js` is the wiring, `main.js` the view and the loops, `ui.js`/`tokens.js` the drawing.
 
-Verified end-to-end on Windows (Herdr 0.1.17, 2026-11-24): a real bot token (`Token is good: @Gentle9Bot`), a tap answering a live session, and a Telegram message arriving as a prompt. Still untested: macOS, Linux, a remote machine's window, group chats, and a `pendingQuestion` of kind `prompt`. See `RECIPE.md`.
+Verified end-to-end on Windows (Herdr 0.1.17, 2026-11-24): a real bot token (`Token is good: @Gentle9Bot`), a tap answering a live session, and a Telegram message arriving as a prompt. Still untested: macOS, Linux, a remote machine's window, group chats, and a `pendingQuestion` of kind `prompt`. See [`RECIPE.md`](RECIPE.md).
+
+<p align="center">
+  <a href="https://github.com/Gentleman-Programming/gentle-ai">
+    <img width="220" src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" />
+  </a>
+</p>
+
+## License
+MIT. See [`LICENSE`](LICENSE).

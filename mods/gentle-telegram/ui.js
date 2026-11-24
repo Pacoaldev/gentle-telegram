@@ -2,6 +2,7 @@
 // Nothing here reads or writes the bridge: it draws what the view already decided.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Textarea } from "gpui-base";
+import { props } from "herdr";
 
 const CLEAR = "#00000000";
 const LOG_ROWS = 14;
@@ -18,6 +19,7 @@ export function button(p, label, on, { primary = false, disabled = false } = {})
     .text_size(12).cursor_pointer()
     .when(Boolean(disabled), (el) => el.opacity(0.45))
     .hover((st) => st.bg(primary ? p.accent : p.hover))
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click(on)
     .child(label);
 }
@@ -46,7 +48,14 @@ function header(p, v, cx) {
       .child(chip(p, `${c.seen} seen`, p.muted))
       .child(chip(p, `${c.answered} answered`, p.ok))
       .child(chip(p, `${c.orders} orders`, p.info))
-      .when(c.errors > 0, (el) => el.child(chip(p, `${c.errors} errors`, p.err))))
+      .when(c.errors > 0, (el) => el.child(chip(p, `${c.errors} errors`, p.err)))
+      .when(Boolean(props()?.overlay), (el) => el.child(div()
+        .id("gt-close").flex_none().size(22).flex().items_center().justify_center().rounded(p.R.chip)
+        .text_color(p.muted).cursor_pointer()
+        .hover((st) => st.bg(p.hover).text_color(p.text))
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click(() => v.close())
+        .child("✕"))))
     .when(Boolean(v.error), (el) => el.child(notice(p, v.error, p.err)))
     .when(!v.settings.token, (el) => el.child(notice(
       p,
@@ -99,6 +108,7 @@ function log(p, v) {
 function composer(p, v, cx) {
   return h_flex().w_full().flex_none().px(14).py(10).gap(8).items_center().border_t(1).border_color(p.line)
     .child(div().flex_1().min_w(0).rounded(p.R.row).border(1).border_color(p.lineStrong).bg(p.raised).px(8).py(6)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(Textarea.new(v.input).w_full().text_size(13).line_height(1.4).text_color(p.text).bg(CLEAR)))
     .child(button(p, "Send", (_e, cx) => v.send(cx), { primary: true, disabled: v.busy }));
 }
