@@ -73,7 +73,7 @@
       "command": "gentle-telegram.send",
       "button": "Send the composed order",
       "label": "Order",
-      "hint": "Sends what the mod's own composer holds to the newest session."
+      "hint": "Sends the composer's text as an order: to the newest session with an inbox, else to `hc send` in the focused terminal. It ignores which session is on screen."
     },
     {
       "id": "forget",

@@ -5,12 +5,12 @@
 *Sanitized mock of the mod's card (`tools/preview-mock.py`): no real session, path or token.*
 
 # Telegram Bridge
-A Herdr app mod (`gentle-telegram`) that puts Telegram in the loop of a [Gentle Shell](https://github.com/Pacoaldev) session: the option question a session is blocked on goes to your phone with one button per option, and a message you send from Telegram runs as a prompt in the newest session.
+A Herdr app mod (`gentle-telegram`) that puts Telegram in the loop of a [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell) session: the option question a session is blocked on goes to your phone with one button per option, and a message you send from Telegram runs as a prompt in the newest session.
 
 The point is which path answers. A tap writes a `gentle-shell.desktop-action/v1` file (`kind: "answer_question"`, `args: { toolCallId, option, via: "session" }`) into `<agentDir>/desktop/inbox/<sessionId>/`, which is the path that actually unblocks Pi: no terminal keys, no pane scraping.
 
 ## Requirements
-- The [Herdr app](https://herdr.dev), with mods and `kit.json` settings.
+- The [Herdr app](https://herdr.dev) (`herdr-app`), with mods and `kit.json` settings.
 - Gentle Shell sessions writing the desktop feed (`gentle-shell.desktop-feed/v1`) on this machine.
 - A Telegram bot: talk to @BotFather, `/newbot`, copy the token.
 
@@ -21,7 +21,7 @@ The point is which path answers. A tap writes a `gentle-shell.desktop-action/v1`
 | Reads | `<agentDir>/desktop/sessions/*.json` (the feed) and `<agentDir>/desktop/outbox/<sessionId>/*.json` (the session's own answer coming back). |
 | Writes | `<agentDir>/desktop/inbox/<sessionId>/<id>.json`, the `gentle-shell.desktop-action/v1` answer file. |
 | Runs | `hc send <address> <text>` only when the newest session has no inbox. Nothing else is executed. |
-| Secret | The bot token lives in `shared("gentle-telegram.token")` (or `GENTLE_TELEGRAM_TOKEN`) and is never logged. |
+| Secret | The bot token lives in `shared("gentle-telegram.token")`, the **Bot token** setting, and is never logged. |
 
 ## Install
 Copy and paste this prompt to your LLM agent:
@@ -58,10 +58,12 @@ Sent once per question: the dedup signature is `gentle-feed:<toolCallId>`, so a 
 | --- | --- |
 | `gentle-telegram.start` / `.stop` | Polling on / off, without deleting the token. |
 | `gentle-telegram.check` | Calls `getMe` and says which bot the token belongs to, or what Telegram refused. |
-| `gentle-telegram.send` | Sends what the mod's own composer holds. |
+| `gentle-telegram.send` | Sends the composer's text as an order: to the newest session that has an inbox, else to `hc send` in the focused terminal. It ignores which session is on screen. |
 | `gentle-telegram.forget-chat` | Drops the learned chat, so the next one that writes becomes the operator's. |
 
 Inside the window: one button per option of the open question (the same answers Telegram offers), the composer, and the log.
+
+The composer does the same thing a Telegram message does: its text is relayed as an order, never as an answer to the open question. Answer with the option buttons.
 
 ## Develop
 ```bash
@@ -70,4 +72,4 @@ herdr-app check mods/gentle-telegram        # the mod loads once, and what is wr
 ```
 `mods/gentle-telegram/lib/` holds the rules (the Telegram wire format, the feed extraction, the action files, the dedup state) with no host imports, so they are unit-tested without a bot, a machine or a window. `runtime.js` is the wiring, `main.js` the view and the loops, `ui.js`/`tokens.js` the drawing.
 
-Untested: a real bot token, a live Pi session, macOS, Linux, and a remote machine's window. See `RECIPE.md`.
+Verified end-to-end on Windows (Herdr 0.1.17, 2026-11-24): a real bot token (`Token is good: @Gentle9Bot`), a tap answering a live session, and a Telegram message arriving as a prompt. Still untested: macOS, Linux, a remote machine's window, group chats, and a `pendingQuestion` of kind `prompt`. See `RECIPE.md`.
