@@ -4,7 +4,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   apiUrl, getUpdatesBody, decodeUpdate, encodeCallbackData, decodeCallbackData,
-  inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat, POLL_TIMEOUT_MAX, MAX_OPTIONS,
+  inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat,
+  telegramFetchFailedInHost, telegramCurlTimeoutSeconds, telegramRefusalDetail,
+  POLL_TIMEOUT_MAX, MAX_OPTIONS,
 } from "../mods/gentle-telegram/lib/telegram.js";
 
 test("apiUrl: bot method URL, and an empty token is refused", () => {
@@ -130,4 +132,24 @@ test("firstAllowedChat: the written allowlist wins, the learned chat is the fall
   assert.equal(firstAllowedChat("   ", null), null);
   assert.equal(firstAllowedChat("not-a-number", 5), 5);
   assert.equal(firstAllowedChat("nope, -1001", 5), -1001, "a group id is negative");
+});
+
+test("telegramFetchFailedInHost: reqwest transport errors, not Telegram refusals", () => {
+  assert.equal(
+    telegramFetchFailedInHost(new Error("fetching https://api.telegram.org/bot1:xx/getMe failed: error sending request for url")),
+    true,
+  );
+  assert.equal(telegramFetchFailedInHost(new Error("Telegram refused getMe: Unauthorized")), false);
+  assert.equal(telegramCurlTimeoutSeconds("getUpdates"), 90);
+  assert.equal(telegramCurlTimeoutSeconds("getMe"), 60);
+});
+
+test("telegramRefusalDetail: 429 names the wait, without echoing the token", () => {
+  const msg = telegramRefusalDetail("getMe", {
+    ok: false,
+    error_code: 429,
+    description: "Too Many Requests: retry after 32",
+    parameters: { retry_after: 32 },
+  }, 429);
+  assert.match(msg, /wait 32s/);
 });

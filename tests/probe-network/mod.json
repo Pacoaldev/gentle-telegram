@@ -3,5 +3,18 @@
   "name": "Telegram probe (not published)",
   "place": "none",
   "title": "Telegram probe",
-  "description": "One-shot reachability probe for api.telegram.org from a mod's fetch. Not part of the published mod."
+  "description": "One-shot reachability probe for api.telegram.org from a mod's fetch. Not part of the published mod.",
+  "capabilities": {
+    "network": {
+      "hosts": ["api.telegram.org"],
+      "http": [
+        {
+          "scheme": "https",
+          "host": "api.telegram.org",
+          "methods": ["GET"],
+          "path_prefixes": ["/bot"]
+        }
+      ]
+    }
+  }
 }

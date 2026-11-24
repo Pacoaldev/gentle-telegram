@@ -1,1 +1,17 @@
-{ "place": "none", "title": "Telegram Bridge" }
+{
+  "place": "none",
+  "title": "Telegram Bridge",
+  "capabilities": {
+    "network": {
+      "hosts": ["api.telegram.org"],
+      "http": [
+        {
+          "scheme": "https",
+          "host": "api.telegram.org",
+          "methods": ["GET", "POST"],
+          "path_prefixes": ["/bot"]
+        }
+      ]
+    }
+  }
+}

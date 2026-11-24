@@ -168,3 +168,35 @@ export function firstAllowedChat(allowlist, learned) {
   if (Number.isInteger(first)) return first;
   return Number.isInteger(learned) ? learned : null;
 }
+
+/** Herdr's in-process fetch can fail on Windows before Telegram answers (reqwest transport). */
+export function telegramFetchFailedInHost(error) {
+  const message = String(error && typeof error === "object" && "message" in error ? error.message : error ?? "");
+  return /error sending request/i.test(message) || /^fetching https?:\/\//i.test(message);
+}
+
+/** curl -m budget: long-poll getUpdates needs Telegram's timeout plus headroom. */
+export function telegramCurlTimeoutSeconds(method) {
+  return method === "getUpdates" ? 90 : 60;
+}
+
+/** Turn Telegram's JSON refusal into one short line for the log (no token). */
+export function telegramRefusalDetail(method, data, httpStatus) {
+  const payload = data && typeof data === "object" ? data : null;
+  if (payload && payload.error_code === 429) {
+    const retry = payload.parameters && typeof payload.parameters === "object"
+      ? payload.parameters.retry_after
+      : null;
+  const fromDescription = typeof payload.description === "string"
+    ? payload.description.match(/retry after (\d+)/i)
+    : null;
+    const seconds = Number.isFinite(retry) ? retry : fromDescription ? Number(fromDescription[1]) : null;
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return `Too many requests on ${method}; wait ${seconds}s and try again.`;
+    }
+  }
+  if (payload && typeof payload.description === "string" && payload.description.trim()) {
+    return payload.description.trim();
+  }
+  return `HTTP ${httpStatus ?? "?"}`;
+}

@@ -11,10 +11,11 @@
 // Nothing in this file claims that a session accepted an action: the answer to a desktop action is
 // the session's own outbox result, and a missing result is reported as missing (S6).
 
-import { hc, focused, terminals, home, readTextFile, writeTextFile, shared, setShared, watchFolder } from "herdr";
+import { exec, hc, focused, terminals, home, readTextFile, writeTextFile, shared, setShared, watchFolder } from "herdr";
 import { exists, readdir } from "fs/promises";
 import {
-  apiUrl, getUpdatesBody, chooseChat, safeText,
+  apiUrl, getUpdatesBody, chooseChat, safeText, telegramFetchFailedInHost, telegramCurlTimeoutSeconds,
+  telegramRefusalDetail,
 } from "./lib/telegram.js";
 import { pickPending, newestSession } from "./lib/feed.js";
 import { answerAction, promptAction, validateAction, inboxPath, outboxPath, parseActionResult } from "./lib/actions.js";
@@ -98,12 +99,36 @@ export function bridgeFor(state, toolCallId) {
 
 // --- Telegram ---------------------------------------------------------------------------------
 
-async function call(token, method, body) {
-  const url = apiUrl(token, method);
-  const response = body === undefined
-    ? await fetch(url)
-    : await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const raw = await response.text();
+const CURL = typeof process !== "undefined" && process.platform === "win32" ? "curl.exe" : "curl";
+
+/** ponytail: Herdr fetch transport is broken on some Windows builds; curl uses the OS stack. */
+async function callViaCurl(url, method) {
+  const seconds = telegramCurlTimeoutSeconds(method);
+  const args = ["-sS", "-m", String(seconds), url];
+  const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 10) * 1000 });
+  if (code !== 0) {
+    throw new Error(`Telegram transport fallback failed: ${(stderr || stdout || `curl exit ${code}`).trim()}`);
+  }
+  return stdout;
+}
+
+/** POST getUpdates/sendMessage through curl when fetch cannot open the TLS socket. */
+async function callViaCurlPost(url, method, body) {
+  const seconds = telegramCurlTimeoutSeconds(method);
+  const args = [
+    "-sS", "-m", String(seconds), "-X", "POST",
+    "-H", "content-type: application/json",
+    "-d", JSON.stringify(body),
+    url,
+  ];
+  const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 10) * 1000 });
+  if (code !== 0) {
+    throw new Error(`Telegram transport fallback failed: ${(stderr || stdout || `curl exit ${code}`).trim()}`);
+  }
+  return stdout;
+}
+
+function parseTelegramBody(method, raw, httpStatus) {
   let data = null;
   try {
     data = JSON.parse(raw);
@@ -111,10 +136,28 @@ async function call(token, method, body) {
     data = null;
   }
   if (!data || data.ok !== true) {
-    const detail = data && typeof data.description === "string" ? data.description : `HTTP ${response.status}`;
+    const detail = telegramRefusalDetail(method, data, httpStatus);
     throw new Error(`Telegram refused ${method}: ${detail}`);
   }
   return data.result;
+}
+
+async function call(token, method, body) {
+  const url = apiUrl(token, method);
+  let raw;
+  let httpStatus = null;
+  try {
+    const response = body === undefined
+      ? await fetch(url)
+      : await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    httpStatus = response.status;
+    raw = await response.text();
+  } catch (error) {
+    if (!telegramFetchFailedInHost(error)) throw error;
+    raw = body === undefined ? await callViaCurl(url, method) : await callViaCurlPost(url, method, body);
+    httpStatus = null;
+  }
+  return parseTelegramBody(method, raw, httpStatus);
 }
 
 export async function getMe(token) {
