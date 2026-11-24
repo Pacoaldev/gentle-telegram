@@ -7,6 +7,7 @@ import {
   inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat,
   isRelayOrderText,
   telegramFetchFailedInHost, telegramCurlTimeoutSeconds, telegramRefusalDetail, telegramPreferCurlTransport,
+  telegramRetryAfterSeconds, isTelegramWebhookConflict,
   POLL_TIMEOUT_MAX, MAX_OPTIONS,
 } from "../mods/gentle-telegram/lib/telegram.js";
 
@@ -167,4 +168,9 @@ test("telegramRefusalDetail: 429 names the wait, without echoing the token", () 
     parameters: { retry_after: 32 },
   }, 429);
   assert.match(msg, /wait 32s/);
+  assert.equal(telegramRetryAfterSeconds(null, msg), 32);
+  assert.equal(telegramRetryAfterSeconds({ description: "Too Many Requests: retry after 14" }), 14);
+  assert.equal(isTelegramWebhookConflict(new Error("Telegram refused getUpdates: Conflict: can't use getUpdates method while webhook is active")), true);
+  assert.equal(isTelegramWebhookConflict(new Error("Telegram refused getMe: Too many requests")), false);
 });
+

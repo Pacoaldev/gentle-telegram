@@ -22,6 +22,7 @@ const TOKENS = {
 };
 
 export function palette() {
+  /** @type {Record<string, any>} */
   let themed = {};
   try {
     const t = theme();
@@ -29,9 +30,10 @@ export function palette() {
   } catch {
     themed = {};
   }
+  /** @type {Record<string, any>} */
   const out = { R: { card: 10, chip: 6, row: 8 } };
   for (const name of Object.keys(TOKENS)) {
-    const [hex, role] = TOKENS[name];
+    const [hex, role] = TOKENS[/** @type {keyof typeof TOKENS} */ (name)];
     const value = role && typeof themed[role] === "string" ? themed[role] : hex;
     out[name] = typeof value === "string" && value ? value : hex;
   }

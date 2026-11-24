@@ -62,6 +62,8 @@ export default class GentleTelegram extends View {
     this.counters = counters(this.state);
     this.error = null;
     this.errorAt = 0;
+    this.lastWarn = null;
+    this.seenUpdates = new Set();
     this.status = "idle";
     this.busy = false;
     this.nextScan = 0;
@@ -83,6 +85,11 @@ export default class GentleTelegram extends View {
       this.settings.poll = settings.poll;
       this.settings.orders = settings.orders;
       this.settings.details = settings.details;
+      if (rt.syncTokenScope(this.state, settings.token)) {
+        this.error = null;
+        this.errorAt = 0;
+        rt.saveState(this.state);
+      }
     } catch (error) {
       this.warn(`Reading the mod's settings failed: ${rt.errorText(error)}`);
     }
@@ -114,28 +121,47 @@ export default class GentleTelegram extends View {
         await cx.sleep(IDLE_MS);
         continue;
       }
+      const cooldownSec = rt.rateLimitRemainingSeconds(this.state);
+      if (cooldownSec > 0) {
+        this.status = "error";
+        await cx.sleep(rt.pollBackoffMs(this.state, null, ERROR_MS));
+        continue;
+      }
       try {
         const updates = await rt.getUpdates(this.settings.token, this.state.offset);
         this.status = "polling";
+        rt.clearRateLimit(this.state);
         // A failed cycle must not outlive its cause: clear the stale banner once the poll answers.
         if (this.error) {
           this.error = null;
-          this.errorAt = 0;
         }
         if (updates.length) {
+          // If Telegram returned an update_id below our stored offset, the stored offset was
+          // inherited from a different bot; reset so advanceOffset adopts this bot's real stream.
+          if (
+            this.state.offset !== null &&
+            updates.some((u) => Number.isInteger(u?.update_id) && u.update_id < this.state.offset)
+          ) {
+            this.state.offset = null;
+          }
           // ponytail: advance before async consume so the next long poll never redelivers this batch.
           rt.advanceOffset(this.state, updates);
           rt.saveState(this.state);
           cx.timer.after(1, (cx) => this.consume(updates, cx));
         } else cx.timer.after(1, (cx) => cx.notify());
       } catch (error) {
+        if (rt.isTelegramWebhookConflict(error)) {
+          await rt.deleteWebhook(this.settings.token).catch(() => null);
+        }
         const message = rt.errorText(error);
+        const backoff = rt.pollBackoffMs(this.state, error, ERROR_MS);
+        rt.saveState(this.state);
         cx.timer.after(1, (cx) => {
           this.status = "error";
           this.warn(message);
           cx.notify();
         });
-        await cx.sleep(ERROR_MS);
+        await cx.sleep(backoff);
         continue;
       }
       if (Date.now() < this.nextScan) continue;
@@ -202,6 +228,14 @@ export default class GentleTelegram extends View {
     const settings = { ...this.settings };
     const address = rt.focusedAddress();
     for (const raw of updates) {
+      if (Number.isInteger(raw?.update_id)) {
+        if (this.seenUpdates.has(raw.update_id)) continue;
+        this.seenUpdates.add(raw.update_id);
+        if (this.seenUpdates.size > 256) {
+          const oldest = this.seenUpdates.values().next().value;
+          this.seenUpdates.delete(oldest);
+        }
+      }
       const update = decodeUpdate(raw);
       if (!update) continue;
       const admission = rt.admit(this.state, settings.allowlist, update.chatId);
@@ -229,25 +263,32 @@ export default class GentleTelegram extends View {
         : null;
     if (!target) {
       await this.tell(token, "answerCallback", update, "That question is no longer open.");
-      this.warn("A button was tapped for a question that is no longer open.");
       return;
     }
-    const label = this.pending?.options?.[update.option]?.label ?? `option ${update.option + 1}`;
+    const pendingSnap = this.pending;
+    const label = pendingSnap?.options?.[update.option]?.label ?? `option ${update.option + 1}`;
     this.busy = true;
     const result = await rt.answerQuestion({ target, option: update.option, sleep: (ms) => cx.sleep(ms) });
     this.busy = false;
     if (!result.ok) {
+      if (result.error?.code === "question_mismatch") {
+        rt.forgetBridge(this.state, update.toolCallId);
+        if (this.pending?.toolCallId === update.toolCallId) this.pending = null;
+        rt.saveState(this.state);
+      }
       this.warn(`The session refused the answer: ${result.error?.message ?? "no result"}`);
       await this.tell(token, "answerCallback", update, result.error?.message ?? "The session did not answer.");
       return;
     }
+    rt.forgetBridge(this.state, update.toolCallId);
+    if (this.pending?.toolCallId === update.toolCallId) this.pending = null;
     rt.logEvent(this.state, "answered", label);
     rt.saveState(this.state);
     await this.tell(token, "answerCallback", update, `Sent: ${label}`);
     const message = bridge ?? null;
     if (message && Number.isInteger(message.messageId)) {
       await rt
-        .editMessage(token, message.chatId, message.messageId, `${blockerText({ ...this.pending, options: this.pending?.options ?? [] })}\n\n✅ ${label}`)
+        .editMessage(token, message.chatId, message.messageId, `${blockerText({ ...pendingSnap, options: pendingSnap?.options ?? [] })}\n\n✅ ${label}`)
         .catch(() => null);
     }
     cx.timer.after(1, (cx) => {
@@ -298,9 +339,6 @@ export default class GentleTelegram extends View {
       cx.notify();
       return;
     }
-    // Seen before the send: a Telegram failure must not turn into the same question every 4 s.
-    rt.noteSeen(this.state, signature);
-    rt.saveState(this.state);
     cx.notify();
     const chatId = firstAllowedChat(this.settings.allowlist, this.state.chatId);
     if (!chatId) {
@@ -311,6 +349,8 @@ export default class GentleTelegram extends View {
     const keyboard = inlineKeyboard(pending.options, pending.toolCallId);
     rt.sendMessage(this.settings.token, chatId, blockerText(pending), keyboard)
       .then((message) => {
+        // ponytail: mark seen only after Telegram accepts; early mark silenced blockers on transient send failures.
+        rt.noteSeen(this.state, signature);
         rt.rememberBridge(this.state, {
           toolCallId: pending.toolCallId,
           sessionId: pending.sessionId,
@@ -345,11 +385,12 @@ export default class GentleTelegram extends View {
   }
 
   async check(cx) {
+    this.sync();
     const token = this.settings.token;
     if (!token || this.busy) return;
     const wait = rt.rateLimitRemainingSeconds(this.state);
     if (wait > 0) {
-      this.warn(`Telegram rate limit: wait ${wait}s before Check token (NOX9GO Channels with the same bot also counts).`);
+      this.warn(`Telegram rate limit: wait ${wait}s before any call (check, polling, or another app using the same bot token).`);
       return;
     }
     this.busy = true;
@@ -357,9 +398,11 @@ export default class GentleTelegram extends View {
     cx.notify();
     try {
       const me = await rt.getMe(token);
+      rt.clearRateLimit(this.state);
       this.status = this.settings.poll ? "polling" : "idle";
       rt.logEvent(this.state, "notice", `Token is good: @${me.username ?? me.id ?? "bot"}`);
       this.error = null;
+      this.errorAt = 0;
     } catch (error) {
       this.status = "error";
       rt.noteRateLimit(this.state, error);
@@ -399,11 +442,17 @@ export default class GentleTelegram extends View {
       this.busy = false;
       const label = pending.options[option]?.label ?? `option ${option + 1}`;
       if (result.ok) {
+        rt.forgetBridge(this.state, pending.toolCallId);
+        if (this.pending?.toolCallId === pending.toolCallId) this.pending = null;
         rt.logEvent(this.state, "answered", label);
         if (bridge?.agentDir) {
           rt.editMessage(this.settings.token, bridge.chatId, bridge.messageId, `✅ ${label}`).catch(() => null);
         }
       } else {
+        if (result.error?.code === "question_mismatch") {
+          rt.forgetBridge(this.state, pending.toolCallId);
+          if (this.pending?.toolCallId === pending.toolCallId) this.pending = null;
+        }
         this.warn(`The session refused the answer: ${result.error?.message ?? "no result"}`);
       }
       rt.saveState(this.state);
@@ -419,8 +468,9 @@ export default class GentleTelegram extends View {
     const text = String(message ?? "").trim();
     if (!text) return;
     const now = Date.now();
-    if (this.error === text && now - this.errorAt < ERROR_REPEAT_MS) return;
     this.error = text;
+    if (this.lastWarn === text && now - this.errorAt < ERROR_REPEAT_MS) return;
+    this.lastWarn = text;
     this.errorAt = now;
     rt.logEvent(this.state, "error", text);
   }

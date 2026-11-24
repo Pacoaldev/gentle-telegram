@@ -10,14 +10,14 @@ export function chip(p, text, color) {
   return div().flex_none().px(6).py(1).rounded(p.R.chip).bg(p.raised).text_size(11).text_color(color ?? p.muted).child(text);
 }
 
-export function button(p, label, on, opts = {}) {
+export function button(p, label, on, { primary = false, disabled = false } = {}) {
   return div()
-    .flex_none().px(10).py(4).rounded(p.R.chip).border(1).border_color(opts.primary ? p.accent : p.lineStrong)
-    .bg(opts.primary ? p.accent : p.raised)
-    .text_color(opts.primary ? p.background : p.text)
+    .flex_none().px(10).py(4).rounded(p.R.chip).border(1).border_color(primary ? p.accent : p.lineStrong)
+    .bg(primary ? p.accent : p.raised)
+    .text_color(primary ? p.background : p.text)
     .text_size(12).cursor_pointer()
-    .when(Boolean(opts.disabled), (el) => el.opacity(0.45))
-    .hover((st) => st.bg(opts.primary ? p.accent : p.hover))
+    .when(Boolean(disabled), (el) => el.opacity(0.45))
+    .hover((st) => st.bg(primary ? p.accent : p.hover))
     .on_click(on)
     .child(label);
 }
@@ -56,7 +56,9 @@ function header(p, v, cx) {
     .when(Boolean(v.settings.token) && !v.settings.poll, (el) => el.child(notice(p, "Polling is off: nothing is sent to Telegram and no order is relayed.", p.muted)))
     .child(h_flex().w_full().gap(6).items_center()
       .child(button(p, v.settings.poll ? "Stop polling" : "Start polling", (_e, cx) => v.togglePoll(cx), { primary: !v.settings.poll }))
-      .child(button(p, "Check token", (_e, cx) => v.check(cx), { disabled: !v.settings.token || v.busy || v.status === "checking" }))
+      .child(button(p, "Check token", (_e, cx) => v.check(cx), {
+        disabled: !v.settings.token || v.busy || v.status === "checking",
+      }))
       .child(button(p, "Forget the learned chat", (_e, cx) => v.forgetChat(cx), { disabled: !v.state.chatId })));
 }
 

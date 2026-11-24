@@ -15,11 +15,11 @@ import { exec, hc, focused, terminals, home, readTextFile, writeTextFile, shared
 import { exists, readdir } from "fs/promises";
 import {
   apiUrl, getUpdatesBody, chooseChat, safeText, telegramFetchFailedInHost, telegramCurlTimeoutSeconds,
-  telegramRefusalDetail, telegramPreferCurlTransport, telegramRetryAfterSeconds,
+  telegramRefusalDetail, telegramPreferCurlTransport, telegramRetryAfterSeconds, isTelegramWebhookConflict,
 } from "./lib/telegram.js";
 import { pickPending, newestSession } from "./lib/feed.js";
 import { answerAction, promptAction, validateAction, inboxPath, outboxPath, parseActionResult } from "./lib/actions.js";
-import { createState, noteSeen, pushEvent, advanceOffset, takePollerClaim, SEEN_MAX } from "./lib/state.js";
+import { createState, noteSeen, pushEvent, advanceOffset, takePollerClaim, syncTokenScope, SEEN_MAX } from "./lib/state.js";
 
 /** Settings keys, as declared in kit.json. */
 export const SETTING = {
@@ -39,7 +39,7 @@ const OUTBOX_WAIT_MS = 6000;
 const OUTBOX_STEP_MS = 80;
 const TEXT_MAX = 4000;
 
-const env = (name) => (typeof process !== "undefined" && process.env ? process.env[name] : null);
+const env = (name) => (typeof process !== "undefined" && "env" in process && /** @type {any} */ (process).env ? /** @type {any} */ (process).env[name] : null);
 
 export function errorText(error) {
   const message = error && typeof error === "object" && "message" in error ? String(error.message) : String(error ?? "");
@@ -49,9 +49,10 @@ export function errorText(error) {
 /** Everything kit.json writes, read once per host call. */
 export function settings() {
   const token = shared(SETTING.token);
+  const allowlist = shared(SETTING.allowlist);
   return {
     token: typeof token === "string" && token.trim() ? token.trim() : null,
-    allowlist: shared(SETTING.allowlist) ?? "",
+    allowlist: typeof allowlist === "string" ? allowlist : (allowlist ? String(allowlist) : ""),
     poll: shared(SETTING.poll) !== false,
     orders: shared(SETTING.orders) !== false,
     details: shared(SETTING.details) !== false,
@@ -66,12 +67,14 @@ export function loadState() {
   state.rateLimitUntil = null;
   const saved = shared(STATE_KEY);
   if (!saved || typeof saved !== "object") return state;
-  if (Number.isInteger(saved.offset)) state.offset = saved.offset;
-  if (Number.isInteger(saved.rateLimitUntil)) state.rateLimitUntil = saved.rateLimitUntil;
-  if (Array.isArray(saved.seen)) state.seen = saved.seen.filter((s) => typeof s === "string").slice(-SEEN_MAX);
-  if (Number.isInteger(saved.chatId)) state.chatId = saved.chatId;
-  if (Array.isArray(saved.bridges)) {
-    state.bridges = saved.bridges
+  const raw = /** @type {Record<string, any>} */ (saved);
+  if (Number.isInteger(raw.offset)) state.offset = raw.offset;
+  if (typeof raw.tokenKey === "string") state.tokenKey = raw.tokenKey;
+  if (Number.isInteger(raw.rateLimitUntil)) state.rateLimitUntil = raw.rateLimitUntil;
+  if (Array.isArray(raw.seen)) state.seen = raw.seen.filter((s) => typeof s === "string").slice(-SEEN_MAX);
+  if (Number.isInteger(raw.chatId)) state.chatId = raw.chatId;
+  if (Array.isArray(raw.bridges)) {
+    state.bridges = raw.bridges
       .filter((b) => b && typeof b === "object" && typeof b.toolCallId === "string" && typeof b.sessionId === "string")
       .slice(-BRIDGES_MAX);
   }
@@ -81,6 +84,7 @@ export function loadState() {
 export function saveState(state) {
   setShared(STATE_KEY, {
     offset: state.offset,
+    tokenKey: state.tokenKey ?? null,
     seen: state.seen.slice(-SEEN_MAX),
     chatId: state.chatId ?? null,
     bridges: state.bridges.slice(-BRIDGES_MAX),
@@ -98,6 +102,11 @@ export function rememberBridge(state, { toolCallId, sessionId, agentDir, chatId,
 
 export function bridgeFor(state, toolCallId) {
   return state.bridges.find((b) => b.toolCallId === toolCallId) ?? null;
+}
+
+export function forgetBridge(state, toolCallId) {
+  if (!state || !Array.isArray(state.bridges)) return;
+  state.bridges = state.bridges.filter((b) => b.toolCallId !== toolCallId);
 }
 
 // --- Telegram ---------------------------------------------------------------------------------
@@ -169,7 +178,7 @@ function parseTelegramBody(method, raw, httpStatus) {
     const detail = telegramRefusalDetail(method, data, httpStatus);
     const err = new Error(`Telegram refused ${method}: ${detail}`);
     const wait = telegramRetryAfterSeconds(data, detail);
-    if (wait > 0) err.retryAfterSeconds = wait;
+    if (wait > 0) /** @type {any} */ (err).retryAfterSeconds = wait;
     throw err;
   }
   return data.result;
@@ -182,10 +191,22 @@ export function noteRateLimit(state, error) {
   if (wait > 0) state.rateLimitUntil = Date.now() + wait * 1000 + 500;
 }
 
+export function clearRateLimit(state) {
+  if (state && typeof state === "object") state.rateLimitUntil = null;
+}
+
 export function rateLimitRemainingSeconds(state) {
   if (!state || !Number.isInteger(state.rateLimitUntil)) return 0;
   const left = Math.ceil((state.rateLimitUntil - Date.now()) / 1000);
   return left > 0 ? left : 0;
+}
+
+/** How long the poll loop should sleep after a failed Telegram call (honours 429 retry_after). */
+export function pollBackoffMs(state, error, fallbackMs = 5000) {
+  if (error) noteRateLimit(state, error);
+  const sec = rateLimitRemainingSeconds(state);
+  if (sec > 0) return sec * 1000 + 500;
+  return fallbackMs;
 }
 
 async function call(token, method, body) {
@@ -208,6 +229,11 @@ async function call(token, method, body) {
     httpStatus = null;
   }
   return parseTelegramBody(method, raw, httpStatus);
+}
+
+/** Drop any webhook so long-poll `getUpdates` is allowed (harmless when none was set). */
+export async function deleteWebhook(token) {
+  await call(token, "deleteWebhook", { drop_pending_updates: false });
 }
 
 export async function getMe(token) {
@@ -421,8 +447,11 @@ export async function awaitResult({ sessionId, agentDir }, action, sleep, waitMs
   }
 }
 
-/** Answer one open question through the session, and report what the session said back. */
-export async function answerQuestion({ target, option, text, sleep }) {
+/**
+ * Answer one open question through the session, and report what the session said back.
+ * @param {{ target: any, option?: any, text?: string, sleep: (ms: number) => Promise<any> | any }} params
+ */
+export async function answerQuestion({ target, option = undefined, text = undefined, sleep }) {
   const action = text !== undefined
     ? answerAction({ sessionId: target.sessionId, toolCallId: target.toolCallId, text })
     : answerAction({ sessionId: target.sessionId, toolCallId: target.toolCallId, option });
@@ -477,4 +506,4 @@ export function logEvent(state, kind, text, extra = {}) {
   return pushEvent(state, { kind, text: safeText(String(text ?? "")).slice(0, 400), ...extra });
 }
 
-export { noteSeen, advanceOffset };
+export { noteSeen, advanceOffset, syncTokenScope, isTelegramWebhookConflict };

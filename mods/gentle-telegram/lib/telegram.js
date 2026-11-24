@@ -29,9 +29,11 @@ export function apiUrl(token, method) {
 /** The body of `getUpdates`: a long poll that only asks for what this bridge reads. */
 export function getUpdatesBody({ offset = null, timeout = POLL_TIMEOUT_DEFAULT } = {}) {
   const seconds = Math.min(Math.max(Math.trunc(Number(timeout) || 0), 0), POLL_TIMEOUT_MAX);
-  const body = { timeout: seconds, allowed_updates: ["message", "callback_query"] };
-  if (Number.isInteger(offset) && offset > 0) body.offset = offset;
-  return body;
+  return {
+    timeout: seconds,
+    allowed_updates: ["message", "callback_query"],
+    ...(Number.isInteger(offset) && offset > 0 ? { offset } : {}),
+  };
 }
 
 /**
@@ -208,8 +210,18 @@ export function telegramRetryAfterSeconds(data, message = "") {
     ? payload.parameters.retry_after
     : null;
   if (Number.isFinite(retry) && retry > 0) return retry;
-  const fromMsg = String(message).match(/wait (\d+)s/i);
-  return fromMsg ? Number(fromMsg[1]) : 0;
+  const fromDesc = typeof payload?.description === "string"
+    ? payload.description.match(/retry after (\d+)/i)
+    : null;
+  if (fromDesc) return Number(fromDesc[1]);
+  const fromMsg = String(message).match(/(?:wait (\d+)s|retry after (\d+))/i);
+  return fromMsg ? Number(fromMsg[1] ?? fromMsg[2]) : 0;
+}
+
+/** True when Telegram refused getUpdates because an active webhook is set on the bot. */
+export function isTelegramWebhookConflict(error) {
+  const message = String(error && typeof error === "object" && "message" in error ? error.message : error ?? "");
+  return /webhook is active|can't use getUpdates/i.test(message);
 }
 
 /** Turn Telegram's JSON refusal into one short line for the log (no token). */

@@ -65,15 +65,15 @@ function action({ sessionId, kind, args, id, now }) {
 }
 
 /** Answer the open question through the session (the path that actually unblocks Pi). */
-export function answerAction({ sessionId, toolCallId, option, text, id, now }) {
-  const args = { toolCallId, via: "session" };
-  if (text !== undefined) args.text = text;
-  else args.option = option;
+export function answerAction({ sessionId, toolCallId, option = undefined, text = undefined, id = undefined, now = undefined }) {
+  const args = text !== undefined
+    ? { toolCallId, via: "session", text }
+    : { toolCallId, via: "session", option };
   return action({ sessionId, kind: "answer_question", args, id, now });
 }
 
 /** Relay a Telegram order as a prompt inside the session. */
-export function promptAction({ sessionId, text, id, now }) {
+export function promptAction({ sessionId, text, id = undefined, now = undefined }) {
   return action({ sessionId, kind: "send_prompt", args: { text }, id, now });
 }
 
