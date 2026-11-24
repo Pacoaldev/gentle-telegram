@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   apiUrl, getUpdatesBody, decodeUpdate, encodeCallbackData, decodeCallbackData,
-  inlineKeyboard, blockerText, orderText, isAllowedChat, safeText, POLL_TIMEOUT_MAX, MAX_OPTIONS,
+  inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat, POLL_TIMEOUT_MAX, MAX_OPTIONS,
 } from "../mods/gentle-telegram/lib/telegram.js";
 
 test("apiUrl: bot method URL, and an empty token is refused", () => {
@@ -87,6 +87,16 @@ test("isAllowedChat: an empty allowlist allows nothing, a list allows exactly it
   assert.equal(isAllowedChat(7, "garbage"), false);
 });
 
+test("chooseChat: with no allowlist the first chat that talks becomes the operator's", () => {
+  const state = {};
+  assert.equal(chooseChat(state, "", 7), true);
+  assert.equal(state.chatId, 7);
+  assert.equal(chooseChat(state, "", 9), false, "a second chat does not take over");
+  assert.equal(chooseChat({ chatId: 7 }, "12", 7), false, "a written allowlist wins over the learned chat");
+  assert.equal(chooseChat({ chatId: 7 }, "12", 12), true);
+  assert.equal(chooseChat({}, "", "7"), false, "a string chat id is never an operator");
+});
+
 test("blockerText: the question, its options and the session, never the word Herdr alone", () => {
   const text = blockerText({
     question: "¿Aplico el cambio?",
@@ -112,4 +122,12 @@ test("safeText: control characters go, new lines and tabs stay", () => {
   assert.equal(safeText("a\u0000b\u001fc"), "abc");
   assert.equal(safeText("a\nb\tc"), "a\nb\tc");
   assert.equal(safeText(null), "");
+});
+
+test("firstAllowedChat: the written allowlist wins, the learned chat is the fallback", () => {
+  assert.equal(firstAllowedChat("111, 222", 999), 111);
+  assert.equal(firstAllowedChat("", 999), 999);
+  assert.equal(firstAllowedChat("   ", null), null);
+  assert.equal(firstAllowedChat("not-a-number", 5), 5);
+  assert.equal(firstAllowedChat("nope, -1001", 5), -1001, "a group id is negative");
 });

@@ -2,7 +2,7 @@
 // dedup signature NOX9GO settled on (`gentle-feed:<toolCallId>`).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pendingFrom, feedSignature, pickPending, isBlocked, FEED_SCHEMA } from "../mods/gentle-telegram/lib/feed.js";
+import { pendingFrom, feedSignature, pickPending, newestSession, isBlocked, FEED_SCHEMA } from "../mods/gentle-telegram/lib/feed.js";
 
 const snapshot = (over = {}) => ({
   schema: FEED_SCHEMA,
@@ -71,4 +71,14 @@ test("pickPending: the newest snapshot wins, and a snapshot with no blocker is s
   assert.equal(pickPending([older, newer, idle]).toolCallId, "call_2");
   assert.equal(pickPending([idle, null, undefined, { snapshot: "x", mtimeMs: 5 }]), null);
   assert.equal(pickPending([]), null);
+  assert.equal(pickPending([{ snapshot: newer.snapshot }])?.toolCallId, "call_2", "a snapshot read without an mtime still counts");
+});
+
+test("newestSession: the newest session we can type into, blocker or not", () => {
+  const blocked = { snapshot: snapshot(), mtimeMs: 100 };
+  const free = { snapshot: snapshot({ activity: { state: "idle" }, identity: { ...snapshot().identity, sessionId: "free" } }), mtimeMs: 400 };
+  assert.equal(newestSession([blocked, free])?.sessionId, "free");
+  assert.equal(newestSession([{ snapshot: snapshot({ identity: { sessionId: "no-dir" } }) }]), null, "a session with no agent dir cannot be talked to");
+  assert.equal(newestSession([]), null);
+  assert.equal(newestSession(null), null);
 });

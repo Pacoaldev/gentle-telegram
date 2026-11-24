@@ -122,18 +122,49 @@ export function orderText(text, sessionName) {
   return `→ ${to}: ${safeText(text).slice(0, TEXT_MAX).trim()}`;
 }
 
-/** An empty allowlist allows nobody: the bridge is never open to whoever finds the bot. */
-export function isAllowedChat(chatId, allowlist) {
-  if (!Number.isInteger(chatId)) return false;
-  const ids = String(allowlist ?? "")
+/** The ids a written allowlist names, in order. Anything that is not an integer is not an id. */
+function chatIds(allowlist) {
+  return String(allowlist ?? "")
     .split(/[\s,;]+/)
     .filter(Boolean)
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value));
-  return ids.includes(chatId);
+}
+
+/** An empty allowlist allows nobody: the bridge is never open to whoever finds the bot. */
+export function isAllowedChat(chatId, allowlist) {
+  if (!Number.isInteger(chatId)) return false;
+  return chatIds(allowlist).includes(chatId);
 }
 
 /** Control characters never reach Telegram or a session: new lines and tabs stay. */
 export function safeText(value) {
   return typeof value === "string" ? value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "") : "";
+}
+
+/**
+ * May this chat talk to the bridge? A written allowlist decides on its own. Without one the first
+ * chat that writes becomes the operator's and is remembered, so the pump can be primed by sending
+ * the bot a message — and a second stranger cannot take it over.
+ */
+export function chooseChat(state, allowlist, chatId) {
+  if (!Number.isInteger(chatId)) return false;
+  const list = String(allowlist ?? "").trim();
+  if (list) return isAllowedChat(chatId, list);
+  if (!state || typeof state !== "object") return false;
+  if (!Number.isInteger(state.chatId)) {
+    state.chatId = chatId;
+    return true;
+  }
+  return state.chatId === chatId;
+}
+
+/**
+ * The chat an outbound message goes to: the first id the written allowlist names, else the chat the
+ * bridge learned from an incoming message, else null — nothing may be told before somebody writes.
+ */
+export function firstAllowedChat(allowlist, learned) {
+  const first = chatIds(allowlist)[0];
+  if (Number.isInteger(first)) return first;
+  return Number.isInteger(learned) ? learned : null;
 }

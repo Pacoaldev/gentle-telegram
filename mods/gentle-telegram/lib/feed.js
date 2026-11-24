@@ -94,3 +94,32 @@ export function pickPending(entries) {
   }
   return best;
 }
+
+/**
+ * The newest session an order can be typed into: any live snapshot whose identity names both a
+ * session and the agent dir that holds its inbox. A blocker is not required — an order is for a
+ * session that is working, not only for one that is stuck.
+ */
+export function newestSession(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  let best = null;
+  let bestAt = -1;
+  for (const entry of list) {
+    const identity = entry?.snapshot?.identity;
+    if (!identity || typeof identity !== "object") continue;
+    const sessionId = str(identity.sessionId);
+    if (!sessionId) continue;
+    if (!isAbsolutePath(identity.agentDir)) continue;
+    const at = Number.isFinite(entry?.mtimeMs) ? entry.mtimeMs : 0;
+    if (best === null || at > bestAt) {
+      best = {
+        sessionId,
+        sessionName: str(identity.sessionName) || null,
+        cwd: str(identity.cwd) || null,
+        agentDir: str(identity.agentDir).replace(/[/\\]+$/, ""),
+      };
+      bestAt = at;
+    }
+  }
+  return best;
+}
