@@ -172,7 +172,14 @@ export function firstAllowedChat(allowlist, learned) {
 /** Herdr's in-process fetch can fail on Windows before Telegram answers (reqwest transport). */
 export function telegramFetchFailedInHost(error) {
   const message = String(error && typeof error === "object" && "message" in error ? error.message : error ?? "");
-  return /error sending request/i.test(message) || /^fetching https?:\/\//i.test(message);
+  return /error sending request/i.test(message)
+    || /^fetching https?:\/\//i.test(message)
+    || /is not granted/i.test(message);
+}
+
+/** On Windows the mod uses curl first — one request, not fetch then curl (rate limits). */
+export function telegramPreferCurlTransport() {
+  return typeof process !== "undefined" && process.platform === "win32";
 }
 
 /** curl -m budget: long-poll getUpdates needs Telegram's timeout plus headroom. */

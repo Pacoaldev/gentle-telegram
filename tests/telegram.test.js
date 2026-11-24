@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   apiUrl, getUpdatesBody, decodeUpdate, encodeCallbackData, decodeCallbackData,
   inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat,
-  telegramFetchFailedInHost, telegramCurlTimeoutSeconds, telegramRefusalDetail,
+  telegramFetchFailedInHost, telegramCurlTimeoutSeconds, telegramRefusalDetail, telegramPreferCurlTransport,
   POLL_TIMEOUT_MAX, MAX_OPTIONS,
 } from "../mods/gentle-telegram/lib/telegram.js";
 
@@ -142,6 +142,7 @@ test("telegramFetchFailedInHost: reqwest transport errors, not Telegram refusals
   assert.equal(telegramFetchFailedInHost(new Error("Telegram refused getMe: Unauthorized")), false);
   assert.equal(telegramCurlTimeoutSeconds("getUpdates"), 90);
   assert.equal(telegramCurlTimeoutSeconds("getMe"), 60);
+  assert.equal(telegramPreferCurlTransport(), process.platform === "win32");
 });
 
 test("telegramRefusalDetail: 429 names the wait, without echoing the token", () => {

@@ -342,23 +342,26 @@ export default class GentleTelegram extends View {
 
   async check(cx) {
     const token = this.settings.token;
-    if (!token) return;
+    if (!token || this.busy) return;
+    this.busy = true;
     this.status = "checking";
     cx.notify();
     try {
       const me = await rt.getMe(token);
-      this.status = "polling";
+      this.status = this.settings.poll ? "polling" : "idle";
       rt.logEvent(this.state, "notice", `Token is good: @${me.username ?? me.id ?? "bot"}`);
       this.error = null;
     } catch (error) {
       this.status = "error";
       this.warn(rt.errorText(error));
+    } finally {
+      this.busy = false;
+      rt.saveState(this.state);
+      cx.timer.after(1, (cx) => {
+        this.counters = counters(this.state);
+        cx.notify();
+      });
     }
-    rt.saveState(this.state);
-    cx.timer.after(1, (cx) => {
-      this.counters = counters(this.state);
-      cx.notify();
-    });
   }
 
   forgetChat(cx) {

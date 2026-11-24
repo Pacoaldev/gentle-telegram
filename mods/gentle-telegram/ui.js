@@ -56,7 +56,7 @@ function header(p, v, cx) {
     .when(Boolean(v.settings.token) && !v.settings.poll, (el) => el.child(notice(p, "Polling is off: nothing is sent to Telegram and no order is relayed.", p.muted)))
     .child(h_flex().w_full().gap(6).items_center()
       .child(button(p, v.settings.poll ? "Stop polling" : "Start polling", (_e, cx) => v.togglePoll(cx), { primary: !v.settings.poll }))
-      .child(button(p, "Check token", (_e, cx) => v.check(cx), { disabled: !v.settings.token || v.busy }))
+      .child(button(p, "Check token", (_e, cx) => v.check(cx), { disabled: !v.settings.token || v.busy || v.status === "checking" }))
       .child(button(p, "Forget the learned chat", (_e, cx) => v.forgetChat(cx), { disabled: !v.state.chatId })));
 }
 

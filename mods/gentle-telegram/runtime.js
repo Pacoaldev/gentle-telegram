@@ -15,7 +15,7 @@ import { exec, hc, focused, terminals, home, readTextFile, writeTextFile, shared
 import { exists, readdir } from "fs/promises";
 import {
   apiUrl, getUpdatesBody, chooseChat, safeText, telegramFetchFailedInHost, telegramCurlTimeoutSeconds,
-  telegramRefusalDetail,
+  telegramRefusalDetail, telegramPreferCurlTransport,
 } from "./lib/telegram.js";
 import { pickPending, newestSession } from "./lib/feed.js";
 import { answerAction, promptAction, validateAction, inboxPath, outboxPath, parseActionResult } from "./lib/actions.js";
@@ -105,11 +105,16 @@ const CURL = typeof process !== "undefined" && process.platform === "win32" ? "c
 async function callViaCurl(url, method) {
   const seconds = telegramCurlTimeoutSeconds(method);
   const args = ["-sS", "-m", String(seconds), url];
-  const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 10) * 1000 });
-  if (code !== 0) {
-    throw new Error(`Telegram transport fallback failed: ${(stderr || stdout || `curl exit ${code}`).trim()}`);
+  try {
+    const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 15) * 1000 });
+    if (code !== 0) {
+      throw new Error((stderr || stdout || `curl exit ${code}`).trim());
+    }
+    return stdout;
+  } catch (error) {
+    if (!telegramPreferCurlTransport()) throw error;
+    return callViaPowerShell(url, "GET", undefined);
   }
-  return stdout;
 }
 
 /** POST getUpdates/sendMessage through curl when fetch cannot open the TLS socket. */
@@ -121,11 +126,33 @@ async function callViaCurlPost(url, method, body) {
     "-d", JSON.stringify(body),
     url,
   ];
-  const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 10) * 1000 });
-  if (code !== 0) {
-    throw new Error(`Telegram transport fallback failed: ${(stderr || stdout || `curl exit ${code}`).trim()}`);
+  try {
+    const { code, stdout, stderr } = await exec(CURL, args, { timeout: (seconds + 15) * 1000 });
+    if (code !== 0) {
+      throw new Error((stderr || stdout || `curl exit ${code}`).trim());
+    }
+    return stdout;
+  } catch (error) {
+    if (!telegramPreferCurlTransport()) throw error;
+    return callViaPowerShell(url, "POST", body);
   }
-  return stdout;
+}
+
+/** When curl from Herdr exec stalls, PowerShell uses the same stack as a manual probe. */
+async function callViaPowerShell(url, method, body) {
+  const seconds = telegramCurlTimeoutSeconds(method);
+  const safeUrl = url.replace(/'/g, "''");
+  const jsonBody = body === undefined ? null : JSON.stringify(body).replace(/'/g, "''");
+  const command = jsonBody === null
+    ? `$r = Invoke-RestMethod -Uri '${safeUrl}' -Method Get -TimeoutSec ${seconds}; $r | ConvertTo-Json -Depth 8 -Compress`
+    : `$r = Invoke-RestMethod -Uri '${safeUrl}' -Method Post -ContentType 'application/json' -Body '${jsonBody}' -TimeoutSec ${seconds}; $r | ConvertTo-Json -Depth 8 -Compress`;
+  const { code, stdout, stderr } = await exec("powershell.exe", ["-NoProfile", "-Command", command], {
+    timeout: (seconds + 20) * 1000,
+  });
+  if (code !== 0) {
+    throw new Error(`Telegram transport failed: ${(stderr || stdout || "PowerShell request failed").trim()}`);
+  }
+  return stdout.trim();
 }
 
 function parseTelegramBody(method, raw, httpStatus) {
@@ -146,6 +173,10 @@ async function call(token, method, body) {
   const url = apiUrl(token, method);
   let raw;
   let httpStatus = null;
+  if (telegramPreferCurlTransport()) {
+    raw = body === undefined ? await callViaCurl(url, method) : await callViaCurlPost(url, method, body);
+    return parseTelegramBody(method, raw, null);
+  }
   try {
     const response = body === undefined
       ? await fetch(url)
