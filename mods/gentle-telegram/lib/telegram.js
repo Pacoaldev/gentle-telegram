@@ -13,6 +13,8 @@ export const POLL_TIMEOUT_MAX = 50;
 export const POLL_TIMEOUT_DEFAULT = 25;
 /** The desktop feed carries at most ten options; a keyboard never carries more. */
 export const MAX_OPTIONS = 10;
+/** NOX9GO hub reply-keyboard labels: the MOD must not relay them as Gentle Shell orders. */
+export const NOX9GO_HUB_REPLY_LABELS = new Set(["📋 Menú", "🔄 Modo", "⌨️ Teclado"]);
 const CALLBACK_PREFIX = "gt:";
 const LABEL_MAX = 60;
 const TEXT_MAX = 4000;
@@ -46,7 +48,7 @@ export function decodeUpdate(update) {
     if (typeof chatId !== "number" || typeof messageId !== "number") return null;
     const text = typeof message.text === "string" ? message.text.trim() : "";
     if (!text) return null;
-    return { kind: "message", chatId, messageId, text, relay: true };
+    return { kind: "message", chatId, messageId, text, relay: isRelayOrderText(text) };
   }
   const query = u.callback_query;
   if (query && typeof query === "object") {
@@ -167,6 +169,18 @@ export function firstAllowedChat(allowlist, learned) {
   const first = chatIds(allowlist)[0];
   if (Number.isInteger(first)) return first;
   return Number.isInteger(learned) ? learned : null;
+}
+
+/**
+ * Text that may run as a Gentle Shell order. Bot commands and the NOX9GO hub keyboard stay with
+ * the gateway when both share a bot — this mod only forwards real prompts.
+ */
+export function isRelayOrderText(text) {
+  const line = typeof text === "string" ? text.trim() : "";
+  if (!line) return false;
+  if (line.startsWith("/")) return false;
+  if (NOX9GO_HUB_REPLY_LABELS.has(line)) return false;
+  return true;
 }
 
 /** Herdr's in-process fetch can fail on Windows before Telegram answers (reqwest transport). */

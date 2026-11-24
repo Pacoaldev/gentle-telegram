@@ -122,8 +122,12 @@ export default class GentleTelegram extends View {
           this.error = null;
           this.errorAt = 0;
         }
-        if (updates.length) cx.timer.after(1, (cx) => this.consume(updates, cx));
-        else cx.timer.after(1, (cx) => cx.notify());
+        if (updates.length) {
+          // ponytail: advance before async consume so the next long poll never redelivers this batch.
+          rt.advanceOffset(this.state, updates);
+          rt.saveState(this.state);
+          cx.timer.after(1, (cx) => this.consume(updates, cx));
+        } else cx.timer.after(1, (cx) => cx.notify());
       } catch (error) {
         const message = rt.errorText(error);
         cx.timer.after(1, (cx) => {

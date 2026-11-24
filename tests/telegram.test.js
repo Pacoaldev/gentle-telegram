@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   apiUrl, getUpdatesBody, decodeUpdate, encodeCallbackData, decodeCallbackData,
   inlineKeyboard, blockerText, orderText, isAllowedChat, chooseChat, safeText, firstAllowedChat,
+  isRelayOrderText,
   telegramFetchFailedInHost, telegramCurlTimeoutSeconds, telegramRefusalDetail, telegramPreferCurlTransport,
   POLL_TIMEOUT_MAX, MAX_OPTIONS,
 } from "../mods/gentle-telegram/lib/telegram.js";
@@ -25,6 +26,19 @@ test("getUpdatesBody: long poll window is clamped, offset only when known", () =
 test("decodeUpdate: a text message", () => {
   const u = { update_id: 1, message: { message_id: 9, chat: { id: -1001 }, text: " corré los tests " } };
   assert.deepEqual(decodeUpdate(u), { kind: "message", chatId: -1001, messageId: 9, text: "corré los tests", relay: true });
+});
+
+test("isRelayOrderText: bot commands and NOX9GO hub keys are not gentle-telegram orders", () => {
+  assert.equal(isRelayOrderText("/start"), false);
+  assert.equal(isRelayOrderText("📋 Menú"), false);
+  assert.equal(isRelayOrderText("corré los tests"), true);
+});
+
+test("decodeUpdate: /start and Menú are not relayed", () => {
+  const start = { update_id: 2, message: { message_id: 1, chat: { id: 7 }, text: "/start" } };
+  assert.equal(decodeUpdate(start)?.relay, false);
+  const menu = { update_id: 3, message: { message_id: 2, chat: { id: 7 }, text: "📋 Menú" } };
+  assert.equal(decodeUpdate(menu)?.relay, false);
 });
 
 test("decodeUpdate: a message without text (or without chat) is not an order", () => {
