@@ -66,6 +66,7 @@ export default class GentleTelegram extends View {
     this.busy = false;
     this.nextScan = 0;
     this.recency = rt.createRecency();
+    this.pollerId = `view-${Math.random().toString(36).slice(2, 10)}`;
     this.input = TextareaState.new({ placeholder: "Order for the shown Gentle Shell…", rows: 1 });
     this.sync();
     cx.spawn((cx) => this.pollLoop(cx));
@@ -103,6 +104,13 @@ export default class GentleTelegram extends View {
       }
       this.sync();
       if (!this.settings.poll || !this.settings.token) {
+        await cx.sleep(IDLE_MS);
+        continue;
+      }
+      // One bot, one long poll: without the claim this view only sleeps (its claim or another
+      // view's is doing the work; a stranded loop's claim expires and is taken over).
+      if (!rt.claimPoller(this.pollerId)) {
+        this.status = "idle";
         await cx.sleep(IDLE_MS);
         continue;
       }

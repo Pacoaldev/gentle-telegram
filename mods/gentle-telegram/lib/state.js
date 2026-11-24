@@ -5,6 +5,9 @@
 export const SEEN_MAX = 256;
 export const EVENTS_MAX = 100;
 
+/** How long a poller claim stays valid without a heartbeat. One long poll is 25 s. */
+export const POLLER_TTL_MS = 45000;
+
 const COUNTER_BY_KIND = { blocker: "seen", answered: "answered", order: "orders", error: "errors" };
 
 export function createState() {
@@ -44,4 +47,21 @@ export function advanceOffset(state, updates) {
 
 export function counters(state) {
   return { ...createState().counters, ...state?.counters };
+}
+
+/**
+ * Who may run the one `getUpdates` long poll Telegram allows: the holder of the claim, refreshed
+ * every cycle, or whoever takes it over once the heartbeat goes quiet (a stranded loop from a
+ * reloaded view never releases cleanly, so the TTL is the release). Returns the new claim, or null
+ * when another live view owns the poll. Pure: the runtime stores the claim in `shared`.
+ */
+export function takePollerClaim(current, ownerId, now, ttlMs = POLLER_TTL_MS) {
+  const owner = typeof ownerId === "string" && ownerId ? ownerId : null;
+  if (!owner) return null;
+  const held = current && typeof current === "object" ? current : null;
+  const mine = held?.owner === owner;
+  const at = Number.isFinite(held?.at) ? held.at : -Infinity;
+  const stale = now - at > ttlMs;
+  if (!mine && !stale) return null;
+  return { owner, at: now };
 }

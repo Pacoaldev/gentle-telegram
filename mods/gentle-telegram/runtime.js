@@ -18,7 +18,7 @@ import {
 } from "./lib/telegram.js";
 import { pickPending, newestSession } from "./lib/feed.js";
 import { answerAction, promptAction, validateAction, inboxPath, outboxPath, parseActionResult } from "./lib/actions.js";
-import { createState, noteSeen, pushEvent, advanceOffset, SEEN_MAX } from "./lib/state.js";
+import { createState, noteSeen, pushEvent, advanceOffset, takePollerClaim, SEEN_MAX } from "./lib/state.js";
 
 /** Settings keys, as declared in kit.json. */
 export const SETTING = {
@@ -126,6 +126,21 @@ export async function getMe(token) {
 export async function getUpdates(token, offset) {
   const result = await call(token, "getUpdates", getUpdatesBody({ offset, timeout: POLL_TIMEOUT_S }));
   return Array.isArray(result) ? result : [];
+}
+
+const POLLER_KEY = "gentle-telegram.poller";
+
+/**
+ * Ask to own the poll, in `shared` so every view of this mod sees the same claim. Called once per
+ * cycle: a holder refreshes its heartbeat, a stranded loop's claim expires and is taken over, and
+ * a second live view waits instead of fighting Telegram over the one `getUpdates`.
+ */
+export function claimPoller(ownerId) {
+  const current = shared(POLLER_KEY);
+  const claim = takePollerClaim(current, ownerId, Date.now());
+  if (!claim) return false;
+  setShared(POLLER_KEY, claim);
+  return true;
 }
 
 export async function sendMessage(token, chatId, text, keyboard) {
