@@ -1,0 +1,10 @@
+# Herdr app local state, credentials and OS noise
+.env
+.env.*
+*.local.json
+settings.json
+keys.json
+node_modules/
+.DS_Store
+Thumbs.db
+herdr-shot.png

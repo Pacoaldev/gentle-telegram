@@ -1,0 +1,11 @@
+{
+  "name": "gentle-telegram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Herdr mod: Telegram bridge for Gentle Shell (blockers out, answers and orders in)",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}
