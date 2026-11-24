@@ -2,16 +2,38 @@
   <img width="100%" src="preview.png" alt="Telegram Bridge" />
 </p>
 
+*Sanitized mock of the mod's card (`tools/preview-mock.py`): no real session, path or token.*
+
 # Telegram Bridge
 A Herdr app mod (`gentle-telegram`) that puts Telegram in the loop of a [Gentle Shell](https://github.com/Pacoaldev) session: the option question a session is blocked on goes to your phone with one button per option, and a message you send from Telegram runs as a prompt in the newest session.
 
 The point is which path answers. A tap writes a `gentle-shell.desktop-action/v1` file (`kind: "answer_question"`, `args: { toolCallId, option, via: "session" }`) into `<agentDir>/desktop/inbox/<sessionId>/`, which is the path that actually unblocks Pi: no terminal keys, no pane scraping.
+
+## Requirements
+- The [Herdr app](https://herdr.dev), with mods and `kit.json` settings.
+- Gentle Shell sessions writing the desktop feed (`gentle-shell.desktop-feed/v1`) on this machine.
+- A Telegram bot: talk to @BotFather, `/newbot`, copy the token.
+
+## What it touches
+| Surface | What |
+| --- | --- |
+| Network | `https://api.telegram.org` only, with your bot token. No other host. |
+| Reads | `<agentDir>/desktop/sessions/*.json` (the feed) and `<agentDir>/desktop/outbox/<sessionId>/*.json` (the session's own answer coming back). |
+| Writes | `<agentDir>/desktop/inbox/<sessionId>/<id>.json`, the `gentle-shell.desktop-action/v1` answer file. |
+| Runs | `hc send <address> <text>` only when the newest session has no inbox. Nothing else is executed. |
+| Secret | The bot token lives in `shared("gentle-telegram.token")` (or `GENTLE_TELEGRAM_TOKEN`) and is never logged. |
 
 ## Install
 Copy and paste this prompt to your LLM agent:
 `Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/Pacoaldev/gentle-telegram/tree/main/mods/gentle-telegram`
 
 Nothing outside the mod folder is required: it talks to Telegram over `fetch` and reads the desktop feed of the Gentle Shell sessions on this machine.
+
+First run:
+1. @BotFather → `/newbot` → paste the token into **Bot token** (`gentle-telegram.token`).
+2. `gentle-telegram.check` answers which bot the token belongs to.
+3. Open the bridge (its `Shortcut` setting, or `herdr-app do mod.open --name gentle-telegram`) and write to the bot from Telegram: the first chat that writes becomes the operator's unless **Allowed chats** names ids.
+4. Block a session on an option question: it arrives with one button per option.
 
 ## What it does
 | Direction | How |
@@ -43,7 +65,7 @@ Inside the window: one button per option of the open question (the same answers 
 
 ## Develop
 ```bash
-node --test tests/                          # 41 tests over the pure logic (lib/)
+node --test tests/                          # 53 tests over the pure logic (lib/)
 herdr-app check mods/gentle-telegram        # the mod loads once, and what is wrong is reported
 ```
 `mods/gentle-telegram/lib/` holds the rules (the Telegram wire format, the feed extraction, the action files, the dedup state) with no host imports, so they are unit-tested without a bot, a machine or a window. `runtime.js` is the wiring, `main.js` the view and the loops, `ui.js`/`tokens.js` the drawing.
