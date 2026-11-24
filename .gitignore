@@ -1,10 +1,10 @@
-# Herdr app local state, credentials and OS noise
-.env
-.env.*
-*.local.json
-settings.json
-keys.json
 node_modules/
+*.log
 .DS_Store
 Thumbs.db
+# Written by the Herdr app into a mod folder (editor types). Not part of the mod.
+**/mods/*/gpui-kit.d.ts
+**/mods/*/jsconfig.json
+# Local scratch of this project.
 herdr-shot.png
+preview-src.png
