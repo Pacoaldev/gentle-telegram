@@ -343,6 +343,11 @@ export default class GentleTelegram extends View {
   async check(cx) {
     const token = this.settings.token;
     if (!token || this.busy) return;
+    const wait = rt.rateLimitRemainingSeconds(this.state);
+    if (wait > 0) {
+      this.warn(`Telegram rate limit: wait ${wait}s before Check token (NOX9GO Channels with the same bot also counts).`);
+      return;
+    }
     this.busy = true;
     this.status = "checking";
     cx.notify();
@@ -353,6 +358,7 @@ export default class GentleTelegram extends View {
       this.error = null;
     } catch (error) {
       this.status = "error";
+      rt.noteRateLimit(this.state, error);
       this.warn(rt.errorText(error));
     } finally {
       this.busy = false;

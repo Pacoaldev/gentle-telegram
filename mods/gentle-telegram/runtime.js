@@ -15,7 +15,7 @@ import { exec, hc, focused, terminals, home, readTextFile, writeTextFile, shared
 import { exists, readdir } from "fs/promises";
 import {
   apiUrl, getUpdatesBody, chooseChat, safeText, telegramFetchFailedInHost, telegramCurlTimeoutSeconds,
-  telegramRefusalDetail, telegramPreferCurlTransport,
+  telegramRefusalDetail, telegramPreferCurlTransport, telegramRetryAfterSeconds,
 } from "./lib/telegram.js";
 import { pickPending, newestSession } from "./lib/feed.js";
 import { answerAction, promptAction, validateAction, inboxPath, outboxPath, parseActionResult } from "./lib/actions.js";
@@ -63,9 +63,11 @@ export function loadState() {
   const state = createState();
   state.bridges = [];
   state.chatId = null;
+  state.rateLimitUntil = null;
   const saved = shared(STATE_KEY);
   if (!saved || typeof saved !== "object") return state;
   if (Number.isInteger(saved.offset)) state.offset = saved.offset;
+  if (Number.isInteger(saved.rateLimitUntil)) state.rateLimitUntil = saved.rateLimitUntil;
   if (Array.isArray(saved.seen)) state.seen = saved.seen.filter((s) => typeof s === "string").slice(-SEEN_MAX);
   if (Number.isInteger(saved.chatId)) state.chatId = saved.chatId;
   if (Array.isArray(saved.bridges)) {
@@ -82,6 +84,7 @@ export function saveState(state) {
     seen: state.seen.slice(-SEEN_MAX),
     chatId: state.chatId ?? null,
     bridges: state.bridges.slice(-BRIDGES_MAX),
+    rateLimitUntil: Number.isInteger(state.rateLimitUntil) ? state.rateLimitUntil : null,
   });
 }
 
@@ -164,9 +167,25 @@ function parseTelegramBody(method, raw, httpStatus) {
   }
   if (!data || data.ok !== true) {
     const detail = telegramRefusalDetail(method, data, httpStatus);
-    throw new Error(`Telegram refused ${method}: ${detail}`);
+    const err = new Error(`Telegram refused ${method}: ${detail}`);
+    const wait = telegramRetryAfterSeconds(data, detail);
+    if (wait > 0) err.retryAfterSeconds = wait;
+    throw err;
   }
   return data.result;
+}
+
+export function noteRateLimit(state, error) {
+  const wait = error && typeof error === "object" && Number.isFinite(error.retryAfterSeconds)
+    ? error.retryAfterSeconds
+    : telegramRetryAfterSeconds(null, errorText(error));
+  if (wait > 0) state.rateLimitUntil = Date.now() + wait * 1000 + 500;
+}
+
+export function rateLimitRemainingSeconds(state) {
+  if (!state || !Number.isInteger(state.rateLimitUntil)) return 0;
+  const left = Math.ceil((state.rateLimitUntil - Date.now()) / 1000);
+  return left > 0 ? left : 0;
 }
 
 async function call(token, method, body) {

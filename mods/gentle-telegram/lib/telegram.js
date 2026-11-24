@@ -187,6 +187,17 @@ export function telegramCurlTimeoutSeconds(method) {
   return method === "getUpdates" ? 90 : 60;
 }
 
+/** Seconds to wait after a 429 refusal (from parameters or description). */
+export function telegramRetryAfterSeconds(data, message = "") {
+  const payload = data && typeof data === "object" ? data : null;
+  const retry = payload?.parameters && typeof payload.parameters === "object"
+    ? payload.parameters.retry_after
+    : null;
+  if (Number.isFinite(retry) && retry > 0) return retry;
+  const fromMsg = String(message).match(/wait (\d+)s/i);
+  return fromMsg ? Number(fromMsg[1]) : 0;
+}
+
 /** Turn Telegram's JSON refusal into one short line for the log (no token). */
 export function telegramRefusalDetail(method, data, httpStatus) {
   const payload = data && typeof data === "object" ? data : null;
