@@ -13,7 +13,7 @@ export function chip(p, text, color) {
 
 export function button(p, label, on, { primary = false, disabled = false } = {}) {
   return div()
-    .flex_none().px(10).py(4).rounded(p.R.chip).border(1).border_color(primary ? p.accent : p.lineStrong)
+    .flex_none().max_w_full().px(10).py(4).rounded(p.R.chip).border(1).border_color(primary ? p.accent : p.lineStrong)
     .bg(primary ? p.accent : p.raised)
     .text_color(primary ? p.background : p.text)
     .text_size(12).cursor_pointer()
@@ -21,7 +21,7 @@ export function button(p, label, on, { primary = false, disabled = false } = {})
     .hover((st) => st.bg(primary ? p.accent : p.hover))
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click(on)
-    .child(label);
+    .child(div().min_w(0).truncate().child(label));
 }
 
 export function notice(p, text, color, bg) {
@@ -81,7 +81,7 @@ function blockerCard(p, v, cx) {
         .child(`${q.sessionName ?? q.sessionId}${q.cwd ? ` · ${q.cwd}` : ""}`)))
     .when(Boolean(q.header), (el) => el.child(div().text_size(11).text_color(p.faint).child(q.header)))
     .child(div().text_size(13).child(q.question))
-    .child(h_flex().w_full().gap(6).items_center()
+    .child(h_flex().w_full().gap(6).items_center().flex_wrap()
       .children(q.options.map((option, index) => button(
         p,
         `${index + 1}. ${option.label}`,
